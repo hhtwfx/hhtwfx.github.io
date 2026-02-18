@@ -1,0 +1,51 @@
+#!/bin/bash
+echo "===== HP 2540p Extreme Optimize ====="
+
+# 更新系统
+sudo apt update
+sudo apt -y upgrade
+
+# 基础工具
+sudo apt install -y \
+htop \
+powertop \
+cpufrequtils \
+thermald \
+zram-tools \
+curl wget git
+
+# 开启 thermald（降温关键）
+sudo systemctl enable thermald
+sudo systemctl start thermald
+
+# CPU governor 调整（稳定模式）
+echo 'GOVERNOR="schedutil"' | sudo tee /etc/default/cpufrequtils
+sudo systemctl disable ondemand 2>/dev/null || true
+
+# zram（老机器核心优化）
+sudo sed -i 's/^PERCENT=.*/PERCENT=60/' /etc/default/zramswap || true
+sudo systemctl restart zramswap || true
+
+# sysctl 内存优化
+sudo tee -a /etc/sysctl.conf <<EOF
+vm.swappiness=10
+vm.vfs_cache_pressure=50
+vm.dirty_ratio=10
+vm.dirty_background_ratio=5
+EOF
+
+sudo sysctl -p
+
+# IO优化
+echo "deadline" | sudo tee /sys/block/sda/queue/scheduler
+
+# bash 优化
+echo 'alias ll="ls -alF"' >> ~/.bashrc
+echo 'alias update="sudo apt update && sudo apt upgrade"' >> ~/.bashrc
+
+# 编译优化
+sudo apt install -y ccache
+echo 'export PATH="/usr/lib/ccache:$PATH"' >> ~/.bashrc
+echo 'export MAKEFLAGS="-j2"' >> ~/.bashrc
+
+echo "===== 完成：重启后生效 ====="
