@@ -1,0 +1,4 @@
+deb https://mirrors.ocf.berkeley.edu/debian/ trixie main contrib non-free-firmware
+deb https://mirrors.ocf.berkeley.edu/debian/ trixie-updates main contrib non-free-firmware
+deb https://mirrors.ocf.berkeley.edu/debian-security/ trixie-security main contrib non-free-firmware
+deb https://mirrors.ocf.berkeley.edu/debian/ trixie-backports main contrib non-free-firmware
