@@ -1,51 +1,88 @@
-#!/bin/bash
-echo "===== HP 2540p Extreme Optimize ====="
+CONFIG_64BIT=y
+CONFIG_X86_64=y
+CONFIG_X86=y
+CONFIG_MMU=y
+CONFIG_EXPERT=y
 
-# 更新系统
-sudo apt update
-sudo apt -y upgrade
+CONFIG_EFI=y
+CONFIG_EFI_STUB=y
+CONFIG_EFI_MIXED=y
+CONFIG_FB_EFI=y
 
-# 基础工具
-sudo apt install -y \
-htop \
-powertop \
-cpufrequtils \
-thermald \
-zram-tools \
-curl wget git
+CONFIG_LOCALVERSION="tiny"
 
-# 开启 thermald（降温关键）
-sudo systemctl enable thermald
-sudo systemctl start thermald
+CONFIG_MODULES=n
+CONFIG_DEBUG_KERNEL=n
+CONFIG_DEBUG_INFO=n
+CONFIG_BPF=n
+CONFIG_KPROBES=n
+CONFIG_FTRACE=n
 
-# CPU governor 调整（稳定模式）
-echo 'GOVERNOR="schedutil"' | sudo tee /etc/default/cpufrequtils
-sudo systemctl disable ondemand 2>/dev/null || true
+CONFIG_PREEMPT_VOLUNTARY=y
+CONFIG_NR_CPUS=2
+CONFIG_SMP=y
 
-# zram（老机器核心优化）
-sudo sed -i 's/^PERCENT=.*/PERCENT=60/' /etc/default/zramswap || true
-sudo systemctl restart zramswap || true
+CONFIG_PCI=y
+CONFIG_PCIEPORTBUS=y
+CONFIG_PCI_QUIRKS=y
 
-# sysctl 内存优化
-sudo tee -a /etc/sysctl.conf <<EOF
-vm.swappiness=10
-vm.vfs_cache_pressure=50
-vm.dirty_ratio=10
-vm.dirty_background_ratio=5
-EOF
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
 
-sudo sysctl -p
+CONFIG_BLK_DEV_INITRD=y
+CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+CONFIG_EMBEDDED=y
 
-# IO优化
-echo "deadline" | sudo tee /sys/block/sda/queue/scheduler
+CONFIG_BLOCK=y
+CONFIG_BLK_DEV=y
+CONFIG_ATA=y
+CONFIG_SATA_AHCI=y
+CONFIG_SCSI=y
+CONFIG_BLK_DEV_SD=y
+CONFIG_PARTITION_ADVANCED=y
+CONFIG_MSDOS_PARTITION=y
+CONFIG_EFI_PARTITION=y
 
-# bash 优化
-echo 'alias ll="ls -alF"' >> ~/.bashrc
-echo 'alias update="sudo apt update && sudo apt upgrade"' >> ~/.bashrc
+CONFIG_FILE_LOCKING=y
+CONFIG_FS_IOMAP=y
+CONFIG_EXT4_FS=y
+CONFIG_EXT4_USE_FOR_EXT2=y
 
-# 编译优化
-sudo apt install -y ccache
-echo 'export PATH="/usr/lib/ccache:$PATH"' >> ~/.bashrc
-echo 'export MAKEFLAGS="-j2"' >> ~/.bashrc
+CONFIG_PROC_FS=y
+CONFIG_SYSFS=y
+CONFIG_TMPFS=y
 
-echo "===== 完成：重启后生效 ====="
+CONFIG_PRINTK=y
+CONFIG_MAGIC_SYSRQ=n
+
+CONFIG_NET=y
+CONFIG_PACKET=y
+CONFIG_UNIX=y
+CONFIG_INET=y
+CONFIG_IP_PNP=n
+CONFIG_NETDEVICES=y
+CONFIG_ETHERNET=y
+CONFIG_E1000=n
+CONFIG_E1000E=n
+
+CONFIG_INPUT=y
+CONFIG_INPUT_KEYBOARD=y
+CONFIG_KEYBOARD_ATKBD=y
+CONFIG_SERIO=y
+CONFIG_SERIO_I8042=y
+CONFIG_TTY=y
+CONFIG_VT=y
+CONFIG_VT_CONSOLE=y
+CONFIG_HW_CONSOLE=y
+CONFIG_UNIX98_PTYS=y
+CONFIG_SERIAL_8250=y
+CONFIG_SERIAL_8250_CONSOLE=y
+
+CONFIG_RD_GZIP=y
+CONFIG_RD_BZIP2=n
+CONFIG_RD_LZMA=n
+CONFIG_RD_XZ=n
+CONFIG_RD_LZO=n
+CONFIG_RD_LZ4=n
+
+CONFIG_KERNEL_GZIP=y
