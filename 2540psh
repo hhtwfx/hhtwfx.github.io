@@ -1,0 +1,58 @@
+#!/bin/bash
+
+echo "===== HP EliteBook 2540p Debian 13 Optimization ====="
+
+sudo apt update
+
+echo "Installing optimization tools..."
+
+sudo apt install -y \
+tlp tlp-rdw \
+powertop \
+thermald \
+cpufrequtils \
+preload \
+zram-tools \
+intel-media-va-driver \
+vainfo \
+i965-va-driver
+
+echo "Enable power services..."
+
+sudo systemctl enable tlp
+sudo systemctl enable thermald
+sudo systemctl enable preload
+
+echo "Enable SSD TRIM..."
+
+sudo systemctl enable fstrim.timer
+
+echo "CPU governor powersave..."
+
+echo 'GOVERNOR="powersave"' | sudo tee /etc/default/cpufrequtils
+
+sudo systemctl enable cpufrequtils
+
+echo "Intel GPU power optimization..."
+
+echo "options i915 enable_psr=1 enable_fbc=1 enable_guc=2" | sudo tee /etc/modprobe.d/i915.conf
+
+echo "Reduce swap usage..."
+
+echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.conf
+
+echo "Enable zram..."
+
+sudo systemctl enable zramswap
+
+echo "Disable unnecessary services..."
+
+sudo systemctl disable bluetooth.service 2>/dev/null
+sudo systemctl disable cups.service 2>/dev/null
+
+echo "Powertop auto tune..."
+
+sudo powertop --auto-tune
+
+echo "===== Optimization complete ====="
+echo "Please reboot your system."
