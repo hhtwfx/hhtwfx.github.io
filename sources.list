@@ -1,4 +1,20 @@
-deb https://mirrors.ocf.berkeley.edu/debian/ trixie main contrib non-free-firmware
-deb https://mirrors.ocf.berkeley.edu/debian/ trixie-updates main contrib non-free-firmware
-deb https://mirrors.ocf.berkeley.edu/debian-security/ trixie-security main contrib non-free-firmware
-deb https://mirrors.ocf.berkeley.edu/debian/ trixie-backports main contrib non-free-firmware
+# 主仓库 + 更新仓库
+Types: deb
+URIs: http://deb.debian.org/debian/
+Suites: trixie trixie-updates
+Components: main contrib non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+# 安全更新仓库
+Types: deb
+URIs: http://security.debian.org/debian-security/
+Suites: trixie-security
+Components: main contrib non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+# 可选：向后移植仓库（获取较新版本的软件）
+Types: deb
+URIs: http://deb.debian.org/debian/
+Suites: trixie-backports
+Components: main contrib non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
