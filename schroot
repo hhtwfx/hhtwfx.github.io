@@ -1,0 +1,13 @@
+# /etc/schroot/chroot.d/sid-mini.conf
+[sid-mini]
+description=Debian Sid (unstable) for EliteBook 2540p
+type=directory
+directory=/srv/chroot/sid-mini
+users=burt
+root-groups=root
+profile=desktop
+personality=linux
+preserve-environment=true
+# --- 以下是为你的硬件特别添加的优化参数 ---
+union-type=overlay
+command-prefix=eatmydata
