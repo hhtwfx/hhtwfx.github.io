@@ -1,0 +1,74 @@
+-- 基本设置
+vim.g.mapleader = " "                 -- 设置空格键为 Leader 键
+vim.opt.number = true                 -- 显示行号
+vim.opt.relativenumber = true         -- 相对行号
+vim.opt.tabstop = 4                   -- Tab 显示为 4 空格
+vim.opt.shiftwidth = 4                -- 缩进级别 4 空格
+vim.opt.expandtab = true              -- 将 Tab 转为空格
+vim.opt.termguicolors = true          -- 启用 24 位颜色
+
+-- Lazy.nvim 安装路径
+local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
+if not vim.loop.fs_stat(lazypath) then
+  vim.fn.system({
+    "git",
+    "clone",
+    "--filter=blob:none",
+    "https://github.com/folke/lazy.nvim.git",
+    "--branch=stable", -- 最新稳定版本
+    lazypath,
+  })
+end
+vim.opt.rtp:prepend(lazypath)
+
+-- 插件管理
+require("lazy").setup({
+  -- 基础插件
+  "nvim-lua/plenary.nvim",                -- Lua 工具包
+  "nvim-treesitter/nvim-treesitter",      -- 语法高亮
+  "neovim/nvim-lspconfig",                -- 内置 LSP 配置
+
+  -- 补全和界面美化插件
+  "hrsh7th/nvim-cmp",                     -- 自动补全引擎
+  "hrsh7th/cmp-nvim-lsp",                 -- LSP 补全源
+  "L3MON4D3/LuaSnip",                     -- 代码片段
+
+  -- 主题、状态栏、文件管理插件
+  "folke/tokyonight.nvim",                -- TokyoNight 主题
+  "nvim-lualine/lualine.nvim",            -- 状态栏
+  "kyazdani42/nvim-tree.lua",             -- 文件树 (文件管理)
+})
+
+-- Treesitter 配置
+require("nvim-treesitter.configs").setup({
+  ensure_installed = { "lua", "python" }, -- 自动安装 Lua 和 Python 语法
+  highlight = { enable = true },          -- 启用语法高亮
+})
+
+-- LSP 配置 (以 Python 的 pyright 为例)
+local lsp = require("lspconfig")
+lsp.pyright.setup({})  -- 启用 pyright 语言服务器
+
+-- 补全引擎 (nvim-cmp) 配置
+local cmp = require("cmp")
+cmp.setup({
+  mapping = {
+    ["<C-n>"] = cmp.mapping.select_next_item(),  -- 下一个补全
+    ["<C-p>"] = cmp.mapping.select_prev_item(),  -- 上一个补全
+    ["<CR>"] = cmp.mapping.confirm({ select = true }) -- 确认补全
+  },
+  sources = {
+    { name = "nvim_lsp" },
+  },
+})
+
+-- 文件树快捷键
+vim.api.nvim_set_keymap("n", "<leader>e", ":NvimTreeToggle<CR>", { noremap = true, silent = true })
+
+-- 状态栏配置
+require("lualine").setup({
+  options = { theme = "tokyonight" }, -- 使用主题
+})
+
+-- 主题设置
+vim.cmd("colorscheme tokyonight") -- 启用 TokyoNight 主题
