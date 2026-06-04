@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+
+  <!-- ========================================= -->
+  <!-- 1. 基本设置：关闭视觉特效以提升性能      -->
+  <!-- ========================================= -->
+  <theme>
+    <name>Clearlooks</name>  <!-- 一个轻量级的 Openbox 主题 -->
+    <keepBorder>no</keepBorder>
+    <animateIconify>no</animateIconify>
+    <font place="ActiveWindow">
+      <name>sans</name><size>8</size><weight>bold</weight>
+    </font>
+    <font place="InactiveWindow">
+      <name>sans</name><size>8</size><weight>normal</weight>
+    </font>
+    <font place="MenuHeader">
+      <name>sans</name><size>8</size><weight>bold</weight>
+    </font>
+    <font place="MenuItem">
+      <name>sans</name><size>8</size><weight>normal</weight>
+    </font>
+    <font place="ActiveOnScreenDisplay">
+      <name>sans</name><size>8</size><weight>bold</weight>
+    </font>
+    <font place="InactiveOnScreenDisplay">
+      <name>sans</name><size>8</size><weight>normal</weight>
+    </font>
+  </theme>
+
+  <!-- ========================================= -->
+  <!-- 2. 轻量化菜单配置                          -->
+  <!-- ========================================= -->
+  <menu>
+    <showDelay>0</showDelay>
+    <hideDelay>0</hideDelay>
+    <border>
+      <width>1</width>
+    </border>
+  </menu>
+
+  <!-- ========================================= -->
+  <!-- 3. 键盘快捷键配置                          -->
+  <!-- ========================================= -->
+  <!-- 格式：<keybind key="W-Return"><action name="Execute"><command>foot</command></action></keybind> -->
+  
+</openbox_config>
