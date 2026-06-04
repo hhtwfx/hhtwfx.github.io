@@ -1,0 +1,15 @@
+meson setup builddir/ \
+  --prefix=/usr/local/mesa-pure-wayland \
+  -Dbuildtype=release \
+  -Dplatforms=wayland \
+  -Dgallium-drivers=crocus \
+  -Dvulkan-drivers=[] \
+  -Dgles1=disabled \
+  -Dgles2=enabled \
+  -Degl=enabled \
+  -Dglx=disabled \
+  -Dglvnd=disabled \
+  -Dopengl=false \
+  -Dxlib-lease=disabled \
+  -Dllvm=disabled \
+  -Dshared-glapi=enabled
