@@ -1,0 +1,63 @@
+// ==========================================
+// 针对老旧 Intel 显卡优化的 Niri 渲染与窗口配置
+// ==========================================
+
+environment {
+    // 强制所有运行在 Niri 下的程序不寻找 X11 兼容层
+    GDK_BACKEND "wayland"
+    QT_QPA_PLATFORM "wayland"
+    MOZ_ENABLE_WAYLAND "1"
+    ELECTRON_OZONE_PLATFORM_HINT "auto"
+}
+
+input {
+    // 针对老旧触控板优化，开启轻触点击和自然滚动
+    touchpad {
+        tap
+        natural-scroll
+    }
+}
+
+layout {
+    // 限制单窗口最大宽度，避免超大窗口导致老旧显卡渲染吃力
+    default-column-width { proportion 0.5; }
+
+    // 窗口间距：保留极简线条，降低 GPU 边缘计算开销
+    gaps 8
+
+    // 边框渲染：只使用纯色，不使用渐变色
+    border {
+        off
+        width 2
+        active-color "#859900"
+        inactive-color "#586e75"
+    }
+
+    // 阴影：必须彻底关闭！
+    // 阴影会严重拖慢第一代 Intel HD 显卡的帧率
+    shadow {
+        off
+    }
+
+    // 关键优化：禁用 26.04.0 新增的模糊特效
+    // i7-640LM 的显卡无力承担实时的窗口背景模糊
+    layer-background-blur {
+        off
+    }
+}
+
+// 动画优化：缩短动效时间或彻底关闭
+// 降低窗口移动时的 CPU/GPU 瞬间负载
+animations {
+    // 如果想要极致流畅，可以直接取消注释下一行彻底关闭动画
+    // off
+
+    // 或者使用超短的极简动画
+    slowdown 0.5
+}
+
+window-rules {
+    // 强制所有窗口不使用客户端装饰（CSD），由 Niri 统一管理，节约资源
+    match {}
+    geometry-corner-radius 0
+}
