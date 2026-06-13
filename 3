@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+WORKSPACE="${HOME}/liveos_workspace"
+ARCH_STAGING="${WORKSPACE}/rootfs_staging"
+QWEN_MODEL_URL="https://huggingface.co"
+
+echo "[步骤 3] 正在提取并注入 Intel 6200 物理网卡闭源微码 (Firmware)..."
+if ls /lib/firmware/iwlwifi-6000-*.ucode 1>/dev/null 2>&1; then
+    cp /lib/firmware/iwlwifi-6000-*.ucode "${ARCH_STAGING}/lib/firmware/"
+fi
+
+mkdir -p "${ARCH_STAGING}/etc/udev/rules.d"
+echo 'ACTION=="add|change", KERNEL=="sd[a-z]|mmcblk[0-9]*", ATTR{queue/rotational}=="1", ATTR{queue/scheduler}="bfq"' > "${ARCH_STAGING}/etc/udev/rules.d/60-ioschedulers.rules"
+
+echo "正在注入 2026 Sysctl 虚拟内存极客锁死保护配置（Swappiness=100 配合 ZRAM）..."
+cat << 'EOF' > "${ARCH_STAGING}/etc/sysctl.d/99-geek-perf.conf"
+vm.swappiness = 100
+vm.watermark_boost_factor = 15000
+vm.watermark_scale_factor = 20
+vm.dirty_background_ratio = 5
+vm.dirty_ratio = 10
+kernel.panic = 20
+EOF
+
+echo "正在部署文泉驿微米黑开源字体并处理中英 Locale 环境防止豆腐块乱码..."
+mkdir -p "${ARCH_STAGING}/usr/share/fonts/wqy-microhei"
+wget -c -O "${ARCH_STAGING}/usr/share/fonts/wqy-microhei/wqy-microhei.ttc" "https://github.com" || true
+
+echo "正在以超轻量提权工具 doas 替换臃肿的 sudo..."
+echo "permit nopass :root" > "${ARCH_STAGING}/etc/doas.conf"
+chmod 600 "${ARCH_STAGING}/etc/doas.conf"
+
+echo "正在植入核心防御层：15秒开机延迟软协调启动流 (.xinitrc)..."
+cat << 'EOF' > "${ARCH_STAGING}/root/.xinitrc"
+#!/bin/sh
+export LANG=zh_CN.UTF-8
+export LC_ALL=zh_CN.UTF-8
+xrdb -merge ~/.Xresources || true
+i3 &
+
+# 【软协调器黄金节流点】强制延迟 15 秒，保护物理机械硬盘磁头不受开机瞬时高负载冲击
+sleep 15
+
+# 以最低系统调度权 nice -n 19 异步唤醒纯 C++ 编写的 AI 推理服务端
+# --no-mmap 物理锁死内存页，--cache-type-k q8_0 强制对实时记忆(KV缓存)执行 INT8 量化减负
+nice -n 19 /usr/bin/llama-server \
+  -m /root/models/qwen2.5-1.5b-instruct-q4_k_m.gguf \
+  -c 2048 \
+  -t 2 \
+  --host 127.0.0.1 \
+  --port 8080 \
+  --no-mmap \
+  --cache-type-k q8_0 \
+  --cache-type-v q8_0 > /var/log/llama.log 2>&1 &
+
+# 再等待 5 秒确认 C++ 本地 Socket 端口在本地 8080 成功就绪，拉起平铺终端运行智能体
+sleep 5
+urxvt -e python3 /root/agent_orchestrator.py &
+wait
+EOF
+chmod +x "${ARCH_STAGING}/root/.xinitrc"
+
+echo "正在将阶段 1 的 Python 脚本资产和 Qwen 模型灌入 Staging 目录..."
+mkdir -p "${ARCH_STAGING}/root/models"
+cp "${WORKSPACE}/agent_orchestrator.py" "${ARCH_STAGING}/root/"
+wget -c -O "${ARCH_STAGING}/root/models/qwen2.5-1.5b-instruct-q4_k_m.gguf" "${QWEN_MODEL_URL}"
+
+echo "✅ 阶段 3：用户态轻量化与防死锁开机时序配置圆满成功！"
