@@ -1,91 +1,42 @@
--- ~/.config/nvim/init.lua
--- Nvim 0.12.3 极简核心配置 (含 LSP 自动补全)
+vim.loader.enable()
 
--- 1. 基础设置 --------------------------------------------------------------
-vim.opt.number = true          -- 行号
-vim.opt.mouse = 'a'            -- 全鼠标支持
-vim.opt.ignorecase = true      -- 搜索忽略大小写
-vim.opt.smartcase = true       -- 有大写时自动区分
-vim.opt.termguicolors = true   -- 真彩色
-vim.opt.cmdheight = 0          -- 消灭 "Press ENTER"
-vim.opt.signcolumn = 'yes'     -- 诊断符号列常驻
-vim.opt.updatetime = 250       -- 响应更快
-
--- 快捷键: 用 - 打开文件树 (原生 netrw)
-vim.keymap.set('n', '-', '<Cmd>Ex<CR>', { desc = '文件树' })
-
--- 2. 原生插件管理 (vim.pack) ------------------------------------------------
-vim.pack.add({
-    -- Treesitter: 语法高亮、代码折叠
-    'nvim-treesitter/nvim-treesitter',
-    -- LSP 管理器: 安装/配置语言服务器
-    'williamboman/mason.nvim',
-    'williamboman/mason-lspconfig.nvim',
-    -- LSP 客户端增强 (补全、跳转)
-    'neovim/nvim-lspconfig',
-    -- 代码片段引擎
-    'L3MON4D3/LuaSnip',
-    -- 自动补全框架
-    'hrsh7th/nvim-cmp',
-    'hrsh7th/cmp-nvim-lsp',     -- LSP 来源
-    'saadparwaiz1/cmp_luasnip', -- 片段来源
-})
-
--- 3. Treesitter 配置 --------------------------------------------------------
-require('nvim-treesitter.configs').setup({
-    ensure_installed = { 'lua', 'vim', 'vimdoc', 'python', 'c', 'cpp' }, -- 按需添加
-    highlight = { enable = true },   -- 语法高亮
-    indent = { enable = true },      -- 智能缩进
-})
-
--- 4. Mason 自动安装 LSP 服务器 ------------------------------------------------
-require('mason').setup()
-require('mason-lspconfig').setup({
-    ensure_installed = { 'lua_ls', 'pyright', 'clangd' },  -- 自动安装
-    automatic_installation = true,
-})
-
--- 5. LSP 通用配置 -----------------------------------------------------------
-local lspconfig = require('lspconfig')
-local on_attach = function(client, bufnr)
-    -- 快捷键 (LSP 常用功能)
-    local opts = { buffer = bufnr, remap = false }
-    vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts)      -- 跳转定义
-    vim.keymap.set('n', 'K', vim.lsp.buf.hover, opts)            -- 悬浮帮助
-    vim.keymap.set('n', '<leader>rn', vim.lsp.buf.rename, opts)   -- 重命名
-    vim.keymap.set('n', '<leader>ca', vim.lsp.buf.code_action, opts) -- 代码操作
-    vim.keymap.set('n', 'gr', vim.lsp.buf.references, opts)       -- 查找引用
-    -- 关闭诊断下划线 (只保留右列符号)
-    vim.diagnostic.config({ virtual_text = false })
+local lazypath = vim.fn.stdpath("data").."/lazy/lazy.nvim"
+if not vim.loop.fs_stat(lazypath) then
+  vim.fn.system({"git","clone","--filter=blob:none","https://github.com/folke/lazy.nvim",lazypath})
 end
+vim.opt.rtp:prepend(lazypath)
 
--- 为每个语言服务器设置
-lspconfig.lua_ls.setup({ on_attach = on_attach })
-lspconfig.pyright.setup({ on_attach = on_attach })
-lspconfig.clangd.setup({ on_attach = on_attach })
+require("lazy").setup({
+  { "williamboman/mason.nvim", config = true },
+  { "williamboman/mason-lspconfig.nvim" },
+  { "neovim/nvim-lspconfig" },
+  { "nvim-treesitter/nvim-treesitter", build=":TSUpdate" },
+  { "hrsh7th/nvim-cmp" },
+  { "hrsh7th/cmp-nvim-lsp" },
 
--- 6. 自动补全 (nvim-cmp) ----------------------------------------------------
-local cmp = require('cmp')
-cmp.setup({
-    snippet = {
-        expand = function(args) require('luasnip').lsp_expand(args.body) end,
-    },
-    mapping = cmp.mapping.preset.insert({
-        ['<C-b>'] = cmp.mapping.scroll_docs(-4),
-        ['<C-f>'] = cmp.mapping.scroll_docs(4),
-        ['<C-Space>'] = cmp.mapping.complete(),
-        ['<C-e>'] = cmp.mapping.abort(),
-        ['<CR>'] = cmp.mapping.confirm({ select = true }), -- 回车确认
-        ['<Tab>'] = cmp.mapping.select_next_item(),        -- Tab 下一个
-        ['<S-Tab>'] = cmp.mapping.select_prev_item(),
-    }),
-    sources = cmp.config.sources({
-        { name = 'nvim_lsp' },    -- LSP 补全
-        { name = 'luasnip' },     -- 代码片段
-    }, {
-        { name = 'buffer' },      -- 当前缓冲区单词
-    }),
+  -- Telescope（新增）
+  { "nvim-lua/plenary.nvim" },
+  { "nvim-telescope/telescope.nvim", tag="0.1.5" },
 })
 
--- 7. 完成！打开文件试试自动补全和 LSP 跳转 ---------------------------------------
-print('Nvim 0.12.3 极简配置已加载，用 - 打开文件树，gd 跳转定义')
+vim.opt.number = true
+vim.opt.relativenumber = true
+vim.opt.termguicolors = true
+
+require("mason").setup()
+require("mason-lspconfig").setup({ ensure_installed = { "lua_ls" } })
+
+local cmp = require("cmp")
+cmp.setup({ mapping = cmp.mapping.preset.insert(), sources = { { name="nvim_lsp" } } })
+
+local caps = require("cmp_nvim_lsp").default_capabilities()
+require("mason-lspconfig").setup_handlers({
+  function(server) require("lspconfig")[server].setup({ capabilities = caps }) end
+})
+
+require("nvim-treesitter.configs").setup({ highlight={enable=true} })
+
+-- Telescope 快捷键（新增）
+local t = require("telescope.builtin")
+vim.keymap.set("n", "<leader>ff", t.find_files)
+vim.keymap.set("n", "<leader>fg", t.live_grep)
