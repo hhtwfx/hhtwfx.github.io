@@ -1,42 +1,105 @@
-vim.loader.enable()
+-- ========================================================================== --
+-- 1. 基础系统选项 (Minimal & Saner Defaults)
+-- ========================================================================== --
+vim.g.mapleader = " "         -- 使用空格键作为 Leader 键
+vim.opt.number = true         -- 显示绝对行号
+vim.opt.relativenumber = true -- 显示相对行号（极速跳转）
+vim.opt.splitright = true     -- 水平拆分窗口在右侧
+vim.opt.splitbelow = true     -- 垂直拆分窗口在下方
+vim.opt.undofile = true        -- 开启持久化撤销历史
+vim.opt.signcolumn = "yes"    -- 总是显示左侧边栏（防止 LSP 符号闪烁）
+vim.opt.termguicolors = true  -- 开启真彩色支持
 
-local lazypath = vim.fn.stdpath("data").."/lazy/lazy.nvim"
+-- ========================================================================== --
+-- 2. 现代化插件管理 (Lazy.nvim 引导)
+-- ========================================================================== --
+local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 if not vim.loop.fs_stat(lazypath) then
-  vim.fn.system({"git","clone","--filter=blob:none","https://github.com/folke/lazy.nvim",lazypath})
+  vim.fn.system({ "git", "clone", "--filter=blob:none", "https://github.com", "--branch=stable", lazypath })
 end
 vim.opt.rtp:prepend(lazypath)
 
 require("lazy").setup({
-  { "williamboman/mason.nvim", config = true },
-  { "williamboman/mason-lspconfig.nvim" },
-  { "neovim/nvim-lspconfig" },
-  { "nvim-treesitter/nvim-treesitter", build=":TSUpdate" },
-  { "hrsh7th/nvim-cmp" },
-  { "hrsh7th/cmp-nvim-lsp" },
+  -- 【主题】2026 极其流行的现代化全能色彩主题
+  { "catppuccin/nvim", name = "catppuccin", priority = 1000, config = function() vim.cmd.colorscheme("catppuccin-mocha") end },
 
-  -- Telescope（新增）
-  { "nvim-lua/plenary.nvim" },
-  { "nvim-telescope/telescope.nvim", tag="0.1.5" },
+  -- 【文件与模糊检索】Telescope 核心
+  {
+    "nvim-telescope/telescope.nvim",
+    branch = "0.1.x",
+    dependencies = { "nvim-lua/plenary.nvim" },
+    keys = {
+      { "<leader>ff", "<cmd>Telescope find_files<cr>", desc = "查找文件" },
+      { "<leader>fg", "<cmd>Telescope live_grep<cr>",  desc = "全文本检索" },
+      { "<leader>fb", "<cmd>Telescope buffers<cr>",    desc = "查看当前缓冲区" },
+    },
+    opts = { defaults = { file_ignore_patterns = { "node_modules", ".git" } } }
+  },
+
+  -- 【语法高亮与解析】Treesitter
+  {
+    "nvim-treesitter/nvim-treesitter",
+    build = ":TSUpdate",
+    config = function()
+      require("nvim-treesitter.configs").setup({
+        -- 核心高亮语言，包含 GitHub 常用配置语言
+        ensure_installed = { "lua", "vim", "vimdoc", "markdown", "json", "yaml", "bash", "go", "python" },
+        highlight = { enable = true },
+        indent = { enable = true },
+      })
+    end
+  },
+
+  -- 【LSP 与工具包管理】Mason, Mason-LSPconfig, nvim-lspconfig
+  {
+    "neovim/nvim-lspconfig",
+    dependencies = {
+      "williamboman/mason.nvim",
+      "williamboman/mason-lspconfig.nvim",
+    },
+    config = function()
+      -- 1. 初始化 Mason 自动化下载工具
+      require("mason").setup({ ui = { border = "rounded" } })
+      
+      -- 2. 预设你日常开发需要开箱即用的语言服务器
+      require("mason-lspconfig").setup({
+        ensure_installed = { "lua_ls", "gopls", "pyright" }, 
+      })
+
+      -- 3. 极简 LSP 快捷键绑定（遵循 0.12+ 原生最佳实践）
+      vim.api.nvim_create_autocmd("LspAttach", {
+        group = vim.api.nvim_create_augroup("UserLspConfig", {}),
+        callback = function(ev)
+          local opts = { buffer = ev.buf }
+          vim.keymap.set("n", "gd", vim.lsp.buf.definition, opts)      -- 跳转到定义
+          vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)            -- 显示悬浮提示 (文档)
+          vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)  -- 变量重命名 (Rename)
+          vim.keymap.set({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, opts) -- 代码重构与修复 (Code Action)
+          vim.keymap.set("n", "gr", vim.lsp.buf.references, opts)      -- 查找所有引用
+        end,
+      })
+
+      -- 4. 自动激活所有通过 Mason 安装的 LSP 语言服务器
+      require("mason-lspconfig").relations = require("mason-lspconfig").relations or {}
+      require("mason-lspconfig").setup_handlers({
+        function(server_name)
+          require("lspconfig")[server_name].setup({})
+        end,
+      })
+    end
+  },
+
+  -- 【GitHub 核心联动：Git 状态标记】
+  {
+    "lewis6991/gitsigns.nvim",
+    opts = {
+      signs = {
+        add          = { text = "┃" },
+        change       = { text = "┃" },
+        delete       = { text = "_" },
+        topdelete    = { text = "‾" },
+        changedelete = { text = "~" },
+      },
+    }
+  }
 })
-
-vim.opt.number = true
-vim.opt.relativenumber = true
-vim.opt.termguicolors = true
-
-require("mason").setup()
-require("mason-lspconfig").setup({ ensure_installed = { "lua_ls" } })
-
-local cmp = require("cmp")
-cmp.setup({ mapping = cmp.mapping.preset.insert(), sources = { { name="nvim_lsp" } } })
-
-local caps = require("cmp_nvim_lsp").default_capabilities()
-require("mason-lspconfig").setup_handlers({
-  function(server) require("lspconfig")[server].setup({ capabilities = caps }) end
-})
-
-require("nvim-treesitter.configs").setup({ highlight={enable=true} })
-
--- Telescope 快捷键（新增）
-local t = require("telescope.builtin")
-vim.keymap.set("n", "<leader>ff", t.find_files)
-vim.keymap.set("n", "<leader>fg", t.live_grep)
