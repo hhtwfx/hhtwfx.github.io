@@ -1,67 +1,112 @@
--- ========================================================================== --
--- 1. 系统基础选项 (0.12 最佳实践)
--- ========================================================================== --
+-- ==========================================================================
+-- 1. 基础选项与 0.12 核心特性
+-- ==========================================================================
 vim.g.mapleader = " "
 local opt = vim.opt
-opt.number = true; opt.relativenumber = true -- 极速行跳转
-opt.splitright = true; opt.splitbelow = true -- 自然分屏
-opt.undofile = true; opt.signcolumn = "yes"  -- 持久化撤销与边栏稳定
-opt.termguicolors = true; opt.cursorline = true
-opt.updatetime = 250; opt.timeoutlen = 300
+opt.number = true
+opt.relativenumber = true
+opt.splitright = true
+opt.splitbelow = true
+opt.undofile = true
 
--- 2026 核心特性：开启 UI2 现代消息引擎，消除 "Press ENTER" 干扰
-pcall(function() require('vim._core.ui2').enable() end)
+opt.autocomplete = true          -- 0.12 原生无感知自动补全
+require('vim._core.ui2').enable() -- 激活全新 UI2 渲染架构
 
--- ========================================================================== --
--- 2. 自动化插件管理 (Lazy.nvim)
--- ========================================================================== --
-local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-if not vim.uv.fs_stat(lazypath) then
-  vim.fn.system({ "git", "clone", "--filter=blob:none", "https://github.com", "--branch=stable", lazypath })
+-- ==========================================================================
+-- 2. 内置包管理器 (vim.pack)
+-- ==========================================================================
+local function p_add(repo)
+  vim.pack.add({ source = "https://github.com/" .. repo })
 end
-vim.opt.rtp:prepend(lazypath)
 
-require("lazy").setup({
-  -- 【主题】
-  { "catppuccin/nvim", name = "catppuccin", priority = 1000, config = function() vim.cmd.colorscheme("catppuccin-mocha") end },
+p_add("nvim-treesitter/nvim-treesitter") 
+p_add("neovim/nvim-lspconfig")           
+p_add("catppuccin/nvim")                 
+vim.cmd.colorscheme("catppuccin-mocha")
 
-  -- 【基础套件】Telescope, Treesitter, Gitsigns
-  { "nvim-telescope/telescope.nvim", dependencies = { "nvim-lua/plenary.nvim" },
-    keys = { {"<leader>ff", "<cmd>Telescope find_files<cr>"}, {"<leader>fg", "<cmd>Telescope live_grep<cr>"} } },
-  { "nvim-treesitter/nvim-treesitter", build = ":TSUpdate", config = function() 
-      require("nvim-treesitter.configs").setup({ ensure_installed = { "lua", "python", "vim", "markdown" }, highlight = { enable = true } }) 
-    end },
-  { "lewis6991/gitsigns.nvim", opts = { current_line_blame = true } },
+-- 【2026 核心集成】引入支持本地大模型标准的微型框架
+p_add("nvim-lua/plenary.nvim")            -- 绝大多数工具的底层异步依赖
+p_add("olimorris/codecompanion.nvim")    -- 新一代高性能流式 AI 助手
 
-  -- 【LSP & Python 工程化】Ruff (格式化/诊断) + Pyright (类型/定义)
-  { "neovim/nvim-lspconfig", 
-    dependencies = { "williamboman/mason.nvim", "williamboman/mason-lspconfig.nvim" },
-    config = function()
-      require("mason").setup({ ui = { border = "rounded" } })
-      require("mason-lspconfig").setup({ ensure_installed = { "pyright", "ruff" } })
-      
-      local lspconfig = require("lspconfig")
-      -- Pyright 仅负责定义跳转，禁用诊断以防与 Ruff 冲突
-      lspconfig.pyright.setup({ settings = { python = { analysis = { ignore = { "*" } } } } })
-      lspconfig.ruff.setup({})
+-- ==========================================================================
+-- 3. 现代 LSP 配置 (Python + 0.12 内置语法)
+-- ==========================================================================
+local capabilities = vim.lsp.protocol.make_client_capabilities()
+capabilities.textDocument.semanticTokens = { range = true }
 
-      -- 快捷键与自动格式化
-      vim.api.nvim_create_autocmd("LspAttach", {
-        callback = function(ev)
-          local b = ev.buf
-          vim.keymap.set("n", "gd", vim.lsp.buf.definition, { buffer = b })
-          vim.keymap.set("n", "K",  vim.lsp.buf.hover,      { buffer = b })
-          vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, { buffer = b })
-        end,
-      })
-      -- 保存即由 Ruff 自动完成毫秒级格式化
-      vim.api.nvim_create_autocmd("BufWritePre", { pattern = "*.py", callback = function() vim.lsp.buf.format({ async = false }) end })
-    end }
+vim.lsp.config("pyright", { capabilities = capabilities })
+vim.lsp.config("ruff", { capabilities = capabilities })
+vim.lsp.enable({ "pyright", "ruff" })
+
+-- 保存时由 Ruff 异步格式化
+vim.api.nvim_create_autocmd("BufWritePre", {
+  pattern = "*.py",
+  callback = function() vim.lsp.buf.format({ async = false }) end,
 })
 
--- ========================================================================== --
--- 3. 0.12 原生增强：开启原生全能补全 (Omni-completion)
--- ========================================================================== --
--- 2026 极客风格：利用 0.12 改进的原生补全，不依赖重型插件
-vim.opt.completeopt = { "menuone", "noselect", "noinsert" }
-vim.api.nvim_set_keymap('i', '<Tab>', [[pumvisible() ? "\<C-n>" : "\<Tab>"]], { expr = true, noremap = true })
+-- ==========================================================================
+-- 4. 极致本地 llama.cpp AI 适配
+-- ==========================================================================
+local cc = require("codecompanion")
+
+cc.setup({
+  -- 1. 配置对话/代码生成的底层适配器
+  adapters = {
+    llamacpp = function()
+      return require("codecompanion.adapters").extend("openai", {
+        name = "llamacpp",
+        url = "http://127.0.0", -- 完美匹配 llama-server 端点
+        env = {
+          api_key = "OpenAI-not-needed-for-local",        -- 本地模型，密钥随便填
+        },
+        schema = {
+          model = {
+            default = "local-model",                      -- 契合 llama.cpp 默认缺省名
+          },
+        },
+      })
+    end,
+  },
+  -- 2. 将默认策略全部绑定到本地服务器上
+  strategies = {
+    chat = { adapter = "llamacpp" },    -- 侧边栏对话面板
+    inline = { adapter = "llamacpp" },  -- 选定代码行内重构/纠错
+  },
+})
+
+-- ==========================================================================
+-- 5. 极客 AI 快捷键定义
+-- ==========================================================================
+-- <leader>a 唤起本地 AI 侧边栏对话框
+vim.keymap.set({ "n", "v" }, "<leader>a", "<cmd>CodeCompanionToggle<cr>", { desc = "AI Chat" })
+-- Visual 模式下按 <leader>ce，将选中的 Python 代码发送给本地模型请求重构/解释
+vim.keymap.set("v", "<leader>ce", "<cmd>CodeCompanion<cr>", { desc = "AI Inline Execute" })
+-- 0.12.3 专属：零插件原生流式请求本地 llama.cpp 补全当前行
+vim.keymap.set("i", "<C-a>", function()
+  local current_line = vim.api.nvim_get_current_line()
+  local row, col = unpack(vim.api.nvim_win_get_cursor(0))
+  
+  -- 利用 0.12 改进的异步非阻塞 vim.system 发送 curl 请求
+  vim.system({
+    "curl", "-s", "http://127.0.0",
+    "-H", "Content-Type: application/json",
+    "-d", vim.fn.json_encode({
+      model = "local-model",
+      messages = {
+        { role = "system", content = "你是一个精通Python的AI补全助手，只输出紧接着补全的代码本身，不要带有markdown包裹。" },
+        { role = "user", content = "帮我补全这一行代码: " .. current_line }
+      },
+      max_tokens = 64,
+      temperature = 0.2
+    })
+  }, { text = true }, function(obj)
+    if obj.code == 0 and obj.stdout then
+      local data = vim.fn.json_decode(obj.stdout)
+      local result = data.choices[1].message.content
+      -- 安全回到主线程将补全代码追加到光标处
+      vim.schedule(function()
+        vim.api.nvim_buf_set_text(0, row - 1, col, row - 1, col, { result })
+      end)
+    end
+  end)
+end, { desc = "Llama.cpp 原生单行补全" })
