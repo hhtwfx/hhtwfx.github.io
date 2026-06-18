@@ -1,105 +1,67 @@
 -- ========================================================================== --
--- 1. 基础系统选项 (Minimal & Saner Defaults)
+-- 1. 系统基础选项 (0.12 最佳实践)
 -- ========================================================================== --
-vim.g.mapleader = " "         -- 使用空格键作为 Leader 键
-vim.opt.number = true         -- 显示绝对行号
-vim.opt.relativenumber = true -- 显示相对行号（极速跳转）
-vim.opt.splitright = true     -- 水平拆分窗口在右侧
-vim.opt.splitbelow = true     -- 垂直拆分窗口在下方
-vim.opt.undofile = true        -- 开启持久化撤销历史
-vim.opt.signcolumn = "yes"    -- 总是显示左侧边栏（防止 LSP 符号闪烁）
-vim.opt.termguicolors = true  -- 开启真彩色支持
+vim.g.mapleader = " "
+local opt = vim.opt
+opt.number = true; opt.relativenumber = true -- 极速行跳转
+opt.splitright = true; opt.splitbelow = true -- 自然分屏
+opt.undofile = true; opt.signcolumn = "yes"  -- 持久化撤销与边栏稳定
+opt.termguicolors = true; opt.cursorline = true
+opt.updatetime = 250; opt.timeoutlen = 300
+
+-- 2026 核心特性：开启 UI2 现代消息引擎，消除 "Press ENTER" 干扰
+pcall(function() require('vim._core.ui2').enable() end)
 
 -- ========================================================================== --
--- 2. 现代化插件管理 (Lazy.nvim 引导)
+-- 2. 自动化插件管理 (Lazy.nvim)
 -- ========================================================================== --
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-if not vim.loop.fs_stat(lazypath) then
+if not vim.uv.fs_stat(lazypath) then
   vim.fn.system({ "git", "clone", "--filter=blob:none", "https://github.com", "--branch=stable", lazypath })
 end
 vim.opt.rtp:prepend(lazypath)
 
 require("lazy").setup({
-  -- 【主题】2026 极其流行的现代化全能色彩主题
+  -- 【主题】
   { "catppuccin/nvim", name = "catppuccin", priority = 1000, config = function() vim.cmd.colorscheme("catppuccin-mocha") end },
 
-  -- 【文件与模糊检索】Telescope 核心
-  {
-    "nvim-telescope/telescope.nvim",
-    branch = "0.1.x",
-    dependencies = { "nvim-lua/plenary.nvim" },
-    keys = {
-      { "<leader>ff", "<cmd>Telescope find_files<cr>", desc = "查找文件" },
-      { "<leader>fg", "<cmd>Telescope live_grep<cr>",  desc = "全文本检索" },
-      { "<leader>fb", "<cmd>Telescope buffers<cr>",    desc = "查看当前缓冲区" },
-    },
-    opts = { defaults = { file_ignore_patterns = { "node_modules", ".git" } } }
-  },
+  -- 【基础套件】Telescope, Treesitter, Gitsigns
+  { "nvim-telescope/telescope.nvim", dependencies = { "nvim-lua/plenary.nvim" },
+    keys = { {"<leader>ff", "<cmd>Telescope find_files<cr>"}, {"<leader>fg", "<cmd>Telescope live_grep<cr>"} } },
+  { "nvim-treesitter/nvim-treesitter", build = ":TSUpdate", config = function() 
+      require("nvim-treesitter.configs").setup({ ensure_installed = { "lua", "python", "vim", "markdown" }, highlight = { enable = true } }) 
+    end },
+  { "lewis6991/gitsigns.nvim", opts = { current_line_blame = true } },
 
-  -- 【语法高亮与解析】Treesitter
-  {
-    "nvim-treesitter/nvim-treesitter",
-    build = ":TSUpdate",
+  -- 【LSP & Python 工程化】Ruff (格式化/诊断) + Pyright (类型/定义)
+  { "neovim/nvim-lspconfig", 
+    dependencies = { "williamboman/mason.nvim", "williamboman/mason-lspconfig.nvim" },
     config = function()
-      require("nvim-treesitter.configs").setup({
-        -- 核心高亮语言，包含 GitHub 常用配置语言
-        ensure_installed = { "lua", "vim", "vimdoc", "markdown", "json", "yaml", "bash", "go", "python" },
-        highlight = { enable = true },
-        indent = { enable = true },
-      })
-    end
-  },
-
-  -- 【LSP 与工具包管理】Mason, Mason-LSPconfig, nvim-lspconfig
-  {
-    "neovim/nvim-lspconfig",
-    dependencies = {
-      "williamboman/mason.nvim",
-      "williamboman/mason-lspconfig.nvim",
-    },
-    config = function()
-      -- 1. 初始化 Mason 自动化下载工具
       require("mason").setup({ ui = { border = "rounded" } })
+      require("mason-lspconfig").setup({ ensure_installed = { "pyright", "ruff" } })
       
-      -- 2. 预设你日常开发需要开箱即用的语言服务器
-      require("mason-lspconfig").setup({
-        ensure_installed = { "lua_ls", "gopls", "pyright" }, 
-      })
+      local lspconfig = require("lspconfig")
+      -- Pyright 仅负责定义跳转，禁用诊断以防与 Ruff 冲突
+      lspconfig.pyright.setup({ settings = { python = { analysis = { ignore = { "*" } } } } })
+      lspconfig.ruff.setup({})
 
-      -- 3. 极简 LSP 快捷键绑定（遵循 0.12+ 原生最佳实践）
+      -- 快捷键与自动格式化
       vim.api.nvim_create_autocmd("LspAttach", {
-        group = vim.api.nvim_create_augroup("UserLspConfig", {}),
         callback = function(ev)
-          local opts = { buffer = ev.buf }
-          vim.keymap.set("n", "gd", vim.lsp.buf.definition, opts)      -- 跳转到定义
-          vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)            -- 显示悬浮提示 (文档)
-          vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)  -- 变量重命名 (Rename)
-          vim.keymap.set({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, opts) -- 代码重构与修复 (Code Action)
-          vim.keymap.set("n", "gr", vim.lsp.buf.references, opts)      -- 查找所有引用
+          local b = ev.buf
+          vim.keymap.set("n", "gd", vim.lsp.buf.definition, { buffer = b })
+          vim.keymap.set("n", "K",  vim.lsp.buf.hover,      { buffer = b })
+          vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, { buffer = b })
         end,
       })
-
-      -- 4. 自动激活所有通过 Mason 安装的 LSP 语言服务器
-      require("mason-lspconfig").relations = require("mason-lspconfig").relations or {}
-      require("mason-lspconfig").setup_handlers({
-        function(server_name)
-          require("lspconfig")[server_name].setup({})
-        end,
-      })
-    end
-  },
-
-  -- 【GitHub 核心联动：Git 状态标记】
-  {
-    "lewis6991/gitsigns.nvim",
-    opts = {
-      signs = {
-        add          = { text = "┃" },
-        change       = { text = "┃" },
-        delete       = { text = "_" },
-        topdelete    = { text = "‾" },
-        changedelete = { text = "~" },
-      },
-    }
-  }
+      -- 保存即由 Ruff 自动完成毫秒级格式化
+      vim.api.nvim_create_autocmd("BufWritePre", { pattern = "*.py", callback = function() vim.lsp.buf.format({ async = false }) end })
+    end }
 })
+
+-- ========================================================================== --
+-- 3. 0.12 原生增强：开启原生全能补全 (Omni-completion)
+-- ========================================================================== --
+-- 2026 极客风格：利用 0.12 改进的原生补全，不依赖重型插件
+vim.opt.completeopt = { "menuone", "noselect", "noinsert" }
+vim.api.nvim_set_keymap('i', '<Tab>', [[pumvisible() ? "\<C-n>" : "\<Tab>"]], { expr = true, noremap = true })
