@@ -1,0 +1,81 @@
+{
+  "version": "1.0",
+  "preset": "AME-ExtremeLite-WSL",
+  "description": "极限精简 Windows，但完整保留 WSL2、Hyper-V、虚拟化平台、HypervisorPlatform、Containers 等所有依赖组件",
+
+  "exclude": [
+
+    /* --- WSL2 / 虚拟化平台（必须保留） --- */
+    "Microsoft-Windows-Subsystem-Linux",
+    "VirtualMachinePlatform",
+    "Microsoft-Hyper-V-All",
+    "Microsoft-Hyper-V-Platform",
+    "Microsoft-Hyper-V-Management-PowerShell",
+    "Microsoft-Windows-HypervisorPlatform",
+    "Containers-Foundation",
+    "Containers-DisposableClientVM",
+    "Microsoft-Windows-Containers",
+
+    /* --- 安全启动过滤驱动（Hyper-V 依赖） --- */
+    "Microsoft-Windows-SecureStartup",
+    "Microsoft-Windows-SecureStartup-FilterDriver",
+
+    /* --- 以下为极限精简部分（安全删除） --- */
+
+    /* 预装应用 */
+    "Microsoft-Windows-ContentDeliveryManager",
+    "Microsoft-Windows-AdvertisingXaml",
+    "Microsoft-Windows-Maps",
+    "Microsoft-Windows-ZuneMusic",
+    "Microsoft-Windows-ZuneVideo",
+    "Microsoft-Windows-FeedbackHub",
+    "Microsoft-Windows-QuickAssist",
+
+    /* Cortana */
+    "Microsoft-Windows-Cortana",
+
+    /* OneDrive */
+    "Microsoft-OneDrive-Setup",
+
+    /* Xbox 全家桶 */
+    "Microsoft-Xbox-App",
+    "Microsoft-Xbox-GameCallableUI",
+    "Microsoft-Xbox-IdentityProvider",
+    "Microsoft-Xbox-TCUI",
+
+    /* 遥测 Telemetry */
+    "Microsoft-Windows-ApplicationInsights",
+    "Microsoft-Windows-ErrorReporting",
+    "Microsoft-Windows-CEIP",
+    "Microsoft-Windows-DiagTrack",
+
+    /* Mixed Reality */
+    "Microsoft-Windows-Holographic",
+
+    /* IE 旧组件 */
+    "Microsoft-Windows-InternetExplorer",
+
+    /* 媒体功能 */
+    "Microsoft-Windows-MediaPlayer",
+
+    /* 打印机（如你不用） */
+    "Microsoft-Windows-Printing-XPSServices",
+
+    /* 语言、手写、OCR */
+    "Microsoft-Windows-Handwriting",
+    "Microsoft-Windows-OCR",
+    "Microsoft-Windows-SpeechRecognition"
+  ],
+
+  "settings": {
+    "disableTelemetry": true,
+    "disableAdvertisingID": true,
+    "disableLocationTracking": true,
+    "disableHibernation": true,
+    "disableSuperfetch": true,
+    "disablePrefetch": true,
+    "disableLockScreen": true,
+    "disableFirstLogonAnimation": true,
+    "disableDriverUpdates": true
+  }
+}
