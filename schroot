@@ -1,6 +1,268 @@
-sudo apt install \
-  build-essential meson ninja-build pkg-config \
-  libwayland-dev wayland-protocols wayland-scanner++ \
-  libwlroots-dev \
-  libdrm-dev libinput-dev libxkbcommon-dev \
-  libegl1-mesa-dev libgles2-mesa-dev
+#!/bin/bash
+# ============================================================================
+# HP EliteBook 2540p x Debian 13 (Trixie) 2026 性能优化脚本
+#
+# 硬件：Arrandale i7-640LM（2 核 4 线程，无 AVX，只有 SSE4.2）
+# Intel HD Graphics Ironlake（Gen5），12.1 寸 1280x800
+# 4GB 内存，QM57 芯片组
+# Intel 82577LM 有线 + Centrino 6200 无线
+# 系统：Debian 13 Trixie，内核 6.12
+# 用途：终端机 + llama.cpp（systemd-nspawn 容器里跑 Qwen3-0.6B/1.7B）
+#
+# 用法：
+# sudo bash 2540p-debian13-optimize.sh # 执行全部优化
+# sudo bash 2540p-debian13-optimize.sh --dry-run # 演练：只打印要做的事
+#
+# 注意：
+# - 必须联网（要 apt 装包）；建议插网线跑，有线比无线稳。
+# - 改完必须重启：GRUB 内核参数、zram、微码都要重启才生效。
+# - 所有被改的文件，改之前都备份到 /root/2540p-opt-backup-<时间戳>/，
+# 回滚方法见脚本最后的输出。
+# - 唯一带安全取舍的是 mitigations=off（关 CPU 漏洞缓解换性能），
+# 详见第 4 节注释；不接受就把那一项从 GRUB 那行删掉再跑。
+# ============================================================================
+
+set -euo pipefail
+
+DRY_RUN=0
+if [[ "${1:-}" == "--dry-run" ]]; then
+DRY_RUN=1
+echo "【演练模式】只打印，不改任何东西"
+fi
+
+BACKUP_DIR="/root/2540p-opt-backup-$(date +%Y%m%d-%H%M%S)"
+
+# ---------- 小工具 ----------
+log() { echo -e "\n=== $* ===";}
+
+run() {
+echo "+ $*"
+if [[ "$DRY_RUN" -eq 0 ]]; then "$@"; fi
+}
+
+backup() {
+# backup <文件>：第一次改动前复制一份到备份目录
+local f="$1"
+[[ -f "$f" ]] || return 0
+run mkdir -p "$BACKUP_DIR"
+if [[ ! -f "$BACKUP_DIR/$(basename "$f")" ]]; then
+run cp -a "$f" "$BACKUP_DIR/"
+fi
+}
+
+write_file() {
+# write_file <文件> <<'EOF'... EOF ：整文件写入（先备份，自动建目录）
+local f="$1"
+echo "+ 写入 $f"
+if [[ "$DRY_RUN" -eq 0 ]]; then
+backup "$f"
+run mkdir -p "$(dirname "$f")"
+cat > "$f"
+else
+cat > /dev/null
+fi
+}
+
+append_once() {
+# append_once <文件> <行>：没有这一行才追加
+local f="$1" line="$2"
+if grep -qxF "$line" "$f" 2>/dev/null; then
+echo " 已存在，跳过：$line"
+else
+echo "+ echo '$line' >> $f"
+if [[ "$DRY_RUN" -eq 0 ]]; then echo "$line" >> "$f"; fi
+fi
+}
+
+# ---------- 0. 检查 ----------
+log "0. 环境检查"
+if [[ "$EUID" -ne 0 ]]; then
+echo "请用 root 跑：sudo bash $0"
+exit 1
+fi
+
+MODEL="$(dmidecode -s system-product-name 2>/dev/null || echo unknown)"
+echo "机型：$MODEL"
+echo "内存：$(free -h | awk '/^Mem:/ {print $2}')"
+if [[ "$MODEL" != *2540p* ]]; then
+echo "警告：检测到的机型不是 2540p。按回车继续，Ctrl+C 退出。"
+read -r _ || true
+fi
+
+echo "注意：本脚本含 mitigations=off（关 CPU 漏洞缓解换性能，"
+echo "单人自用机器风险低，但浏览器里跑不可信网页时理论上有 Spectre 风险）。"
+echo "接受请按回车，Ctrl+C 退出。"
+read -r _ || true
+
+if ! timeout 5 bash -c 'echo > /dev/tcp/deb.debian.org/443' 2>/dev/null; then
+echo "没网：apt 需要联网。先确认能上网（建议插网线）再跑。"
+exit 1
+fi
+echo "网络 OK"
+
+# ---------- 1. 装包 ----------
+log "1. 安装：CPU 微码、固件、zram、earlyoom"
+run apt update
+run apt install -y intel-microcode firmware-linux zram-tools earlyoom
+
+# ---------- 2. zram ----------
+log "2. 配置 zram（把一半内存虚拟成 zstd 压缩的交换区）"
+write_file /etc/default/zramswap <<'EOF'
+# zram 配置（2540p 优化脚本生成）
+# ALGO：压缩算法，zstd 压缩比和速度均衡
+# PERCENT：zram 设备大小占内存的百分比
+# PRIORITY：交换优先级，高于磁盘交换
+ALGO=zstd
+PERCENT=50
+PRIORITY=100
+EOF
+run systemctl enable zramswap.service || echo " （zramswap 启用失败，重启后检查：systemctl status zramswap）"
+run systemctl restart zramswap.service || echo " （zram 本次启动失败，重启后检查：systemctl status zramswap）"
+run systemctl enable --now earlyoom || echo " （earlyoom 启用失败，跳过）"
+
+# ---------- 3. sysctl ----------
+log "3. sysctl 内核调优"
+write_file /etc/sysctl.d/99-2540p-perf.conf <<'EOF'
+# 2540p 性能调优（Debian 13，2026）
+# 积极用 zram 压缩内存，少碰磁盘交换（没 zram 时别设这么高）
+vm.swappiness=180
+# 内存紧张时少丢文件缓存（4GB 上缓存很宝贵）
+vm.vfs_cache_pressure=50
+# 脏页早点回写，别攒一大堆再写（慢盘上交互更顺滑）
+vm.dirty_background_ratio=5
+vm.dirty_ratio=10
+# 关 NMI 看门狗，省一点 CPU（失去内核锁死检测，个人机器可接受）
+kernel.nmi_watchdog=0
+EOF
+run sysctl --system
+
+# ---------- 4. GRUB 启动参数 ----------
+log "4. GRUB 内核启动参数"
+backup /etc/default/grub
+NEW_CMDLINE='GRUB_CMDLINE_LINUX_DEFAULT="quiet loglevel=3 intel_iommu=off mitigations=off cpufreq.default_governor=performance i915.fastboot=1 i915.enable_fbc=1"'
+# 各参数含义：
+# quiet loglevel=3 开机少刷日志（只留错误），启动快一点
+# intel_iommu=off 关 VT-d；这台 DMAR 表是坏的（BIOS 的 RMRR 保留区
+# 对不上），关掉后那条 Firmware Bug 警告消失；
+# 不用 KVM 直通就没任何损失
+# mitigations=off 关 Meltdown/Spectre/MDS 等全部软件缓解；
+# 老 CPU 没硬件缓解，全靠软件，关掉能回来
+# 5-15% CPU 性能；代价见脚本头注释
+# cpufreq.default_governor=performance
+# 默认调速器改 performance，一直满频，
+# 跑 llama.cpp 这种持续满载更稳
+# i915.fastboot=1 开机少一次显示模式设置，亮屏更快
+# i915.enable_fbc=1 核显帧缓冲压缩，省内存带宽留给 CPU
+if grep -q '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub; then
+echo "+ 替换 GRUB_CMDLINE_LINUX_DEFAULT"
+if [[ "$DRY_RUN" -eq 0 ]]; then
+grep -v '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub > /tmp/grub.new
+echo "$NEW_CMDLINE" >> /tmp/grub.new
+mv /tmp/grub.new /etc/default/grub
+fi
+else
+append_once /etc/default/grub "$NEW_CMDLINE"
+fi
+# 启动菜单等待从 5 秒改 2 秒
+if grep -q '^GRUB_TIMEOUT=' /etc/default/grub; then
+echo "+ GRUB_TIMEOUT 改为 2"
+if [[ "$DRY_RUN" -eq 0 ]]; then
+sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=2/' /etc/default/grub
+fi
+fi
+run update-grub
+
+# ---------- 5. 立即生效：CPU 调速器 ----------
+log "5. 立即切 performance 调速器（不用等重启）"
+for gov in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_governor; do
+if [[ -f "$gov" ]]; then
+echo "+ echo performance > $gov"
+if [[ "$DRY_RUN" -eq 0 ]]; then echo performance > "$gov"; fi
+fi
+done
+
+# ---------- 6. 服务与日志 ----------
+log "6. 关掉用不上的服务（恢复命令见每行）"
+for svc in bluetooth ModemManager cups avahi-daemon; do
+echo "停用 $svc（恢复：sudo systemctl enable --now $svc）"
+run systemctl disable --now "$svc" 2>/dev/null || echo " $svc 不存在或已停，跳过"
+done
+run systemctl enable fstrim.timer || echo " （fstrim.timer 启用失败，跳过）"
+write_file /etc/systemd/journald.conf.d/99-2540p.conf <<'EOF'
+[Journal]
+SystemMaxUse=100M
+RuntimeMaxUse=100M
+EOF
+run systemctl restart systemd-journald || echo " （journald 重启失败，跳过）"
+
+# ---------- 7. fstab：根分区加 noatime ----------
+log "7. 根分区加 noatime（少写访问时间，省磁盘写）"
+backup /etc/fstab
+if awk '$1 !~ /^#/ && $2 == "/" && $4 !~ /noatime/ { found=1 } END { exit !found }' /etc/fstab; then
+echo "+ 给根分区挂载选项加 noatime"
+if [[ "$DRY_RUN" -eq 0 ]]; then
+awk '$1 !~ /^#/ && $2 == "/" && $4 !~ /noatime/ { $4 = $4 ",noatime" } { print }' /etc/fstab > /tmp/fstab.new
+mv /tmp/fstab.new /etc/fstab
+if findmnt --verify >/dev/null 2>&1; then
+echo " fstab 校验通过"
+else
+echo "!! fstab 校验失败，已恢复备份"
+cp -a "$BACKUP_DIR/fstab" /etc/fstab
+fi
+fi
+else
+echo " 根分区已有 noatime，或没找到根分区行，跳过"
+fi
+
+# ---------- 8. 磁盘调度器 ----------
+log "8. 磁盘调度器（SSD 才改）"
+if [[ -f /sys/block/sda/queue/rotational ]]; then
+if [[ "$(cat /sys/block/sda/queue/rotational)" == "0" ]]; then
+echo " sda 是 SSD，调度器设为 none"
+echo "+ echo none > /sys/block/sda/queue/scheduler"
+if [[ "$DRY_RUN" -eq 0 ]]; then echo none > /sys/block/sda/queue/scheduler; fi
+write_file /etc/udev/rules.d/60-2540p-ssd-scheduler.rules <<'EOF'
+# SSD 用 none 调度器（2540p 优化脚本生成）
+ACTION=="add|change", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="0", ATTR{queue/scheduler}="none"
+EOF
+run udevadm control --reload-rules || echo " （udev 规则重载失败，重启后生效）"
+else
+echo " sda 是机械盘，保持默认调度器（BFQ 对交互更友好），不改"
+fi
+else
+echo " 没找到 sda，跳过"
+fi
+
+# ---- 可选：无线省电关掉（默认不做） ----
+# 无线网卡省电模式会让延迟抖动、偶尔断流；关掉更稳，费一点电。
+# 重启后手动执行一次（每次开机都要跑一次）：
+# sudo iw dev wlo1 set power_save off
+
+# ---------- 9. 收尾 ----------
+log "9. 更新 initramfs（微码进启动镜像）"
+run update-initramfs -u
+
+log "完成！"
+echo "备份目录：$BACKUP_DIR"
+echo "必须重启：sudo reboot"
+echo ""
+echo "重启后验证："
+echo " cat /proc/cmdline"
+echo "  grep -H . /sys/devices/system/cpu/vulnerabilities/*   # 应显示 Vulnerable / Mitigation: None"
+echo " cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor # 应为 performance"
+echo "  grep . /sys/module/i915/parameters/enable_fbc /sys/module/i915/parameters/fastboot  # 应为 Y"
+echo " dmesg | grep -i microcode # 应看到微码已加载"
+echo " zramctl # 应看到 zram0，约 2GB"
+echo " free -h # swap 一行应显示 zram"
+echo ""
+echo "回滚（任一文件出问题）："
+echo " sudo cp -a $BACKUP_DIR/grub /etc/default/grub && sudo update-grub"
+echo " sudo cp -a $BACKUP_DIR/zramswap /etc/default/zramswap"
+echo " sudo cp -a $BACKUP_DIR/fstab /etc/fstab"
+echo " sudo rm -f /etc/sysctl.d/99-2540p-perf.conf /etc/udev/rules.d/60-2540p-ssd-scheduler.rules /etc/systemd/journald.conf.d/99-2540p.conf"
+echo " sudo systemctl enable --now bluetooth ModemManager cups avahi-daemon"
+echo " sudo reboot"
+if [[ "$DRY_RUN" -eq 1 ]]; then
+echo ""
+echo "【演练模式】以上均未实际执行。确认没问题再跑：sudo bash $0"
+fi
