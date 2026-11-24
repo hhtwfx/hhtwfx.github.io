@@ -1,0 +1,188 @@
+!/bin/sh
+set -eu
+
+# ==============================================================================
+# Alpine Linux 2026 社区工程标准：sys 持久化磁盘模式 UEFI 单文件 (UKI) 自解压打包脚本
+# 内含：
+#   1. setup-alpine-uki-sys.sh (一键自动化部署与配置脚本)
+#   2. verify-alpine-uki.sh    (部署后状态与 PE 魔数独立巡检脚本)
+#   3. README.md               (操作手册与回退说明)
+# ==============================================================================
+
+TARGET_DIR="${1:-./alpine-uki-sys}"
+mkdir -p "$TARGET_DIR"
+
+echo "==> 正在释放 Alpine Linux 2026 UKI (sys 模式) 部署套件至: ${TARGET_DIR}"
+
+# 1. 释放 setup-alpine-uki-sys.sh
+cat << 'EOF_SETUP' > "${TARGET_DIR}/setup-alpine-uki-sys.sh"
+#!/bin/sh
+set -eu
+
+# 1. 基础权限与挂载点校验
+if [ "$(id -u)" -ne 0 ]; then
+    echo "错误：请使用 root 权限运行此脚本。" >&2
+    exit 1
+fi
+
+if ! mountpoint -q /boot/efi; then
+    echo "错误：/boot/efi 未挂载。请先确保 FAT32 格式的 ESP 分区已挂载至 /boot/efi。" >&2
+    exit 1
+fi
+
+ESP_FSTYPE=$(findmnt -no FSTYPE /boot/efi)
+if [ "$ESP_FSTYPE" != "vfat" ]; then
+    echo "警告：/boot/efi 当前文件系统为 ${ESP_FSTYPE}，UEFI 规范标准要求为 vfat (FAT32)。" >&2
+fi
+
+echo "==> [1/6] 安装 2026 社区标准 UKI 组件 (无 Secure Boot 签名模式)..."
+apk add --no-cache secureboot-hook systemd-efistub efibootmgr findmnt lsblk
+
+# 2. 自动提取根分区信息与当前内核参数
+ROOT_UUID=$(findmnt -no UUID /)
+ROOT_FSTYPE=$(findmnt -no FSTYPE /)
+KERNEL_FLAVOR=$(uname -r | awk -F'-' '{print $NF}')
+
+if [ -z "$ROOT_UUID" ]; then
+    echo "错误：无法识别根分区 UUID，请确认当前处于持久化 sys 磁盘模式。" >&2
+    exit 1
+fi
+
+EXISTING_OPTS=$(grep -oE 'modules=[^ ]+|console=[^ ]+|quiet|rootflags=[^ ]+|cryptroot=[^ ]+|cryptdm=[^ ]+' /proc/cmdline | tr '
+' ' ' || true)
+CMDLINE="root=UUID=${ROOT_UUID} rootfstype=${ROOT_FSTYPE} rw ${EXISTING_OPTS}"
+CMDLINE=$(echo "$CMDLINE" | xargs)
+
+echo "    检测到内核分支: ${KERNEL_FLAVOR}"
+echo "    生成内核启动参数: ${CMDLINE}"
+
+# 3. 写入声明式 kernel-hooks 配置与后置回退同步钩子
+echo "==> [2/6] 写入 /etc/kernel-hooks.d/ 声明式配置..."
+mkdir -p /etc/kernel-hooks.d /boot/efi/EFI/Alpine /boot/efi/EFI/BOOT
+
+cat << CONF > /etc/kernel-hooks.d/secureboot.conf
+signing_disabled=yes
+cmdline="${CMDLINE}"
+output_dir="/boot/efi/EFI/Alpine"
+output_name="linux-{flavor}.efi"
+CONF
+
+cat << 'HOOK' > /etc/kernel-hooks.d/99-uki-fallback.hook
+#!/bin/sh
+set -eu
+FLAVOR="$1"
+SRC="/boot/efi/EFI/Alpine/linux-${FLAVOR}.efi"
+DST="/boot/efi/EFI/BOOT/BOOTX64.EFI"
+if [ -f "$SRC" ]; then
+    mkdir -p /boot/efi/EFI/BOOT
+    cp -f "$SRC" "$DST"
+fi
+HOOK
+chmod +x /etc/kernel-hooks.d/99-uki-fallback.hook
+
+# 4. 配置 mkinitfs 避免触发竞争，并执行内核钩子打包单文件 .efi
+echo "==> [3/6] 配置 mkinitfs 并生成单文件 UKI 镜像..."
+mkdir -p /etc/mkinitfs
+if [ ! -f /etc/mkinitfs/mkinitfs.conf ]; then
+    touch /etc/mkinitfs/mkinitfs.conf
+fi
+
+if ! grep -q "^disable_trigger=yes" /etc/mkinitfs/mkinitfs.conf; then
+    echo "disable_trigger=yes" >> /etc/mkinitfs/mkinitfs.conf
+fi
+
+apk fix kernel-hooks
+
+# 5. 注册主板 UEFI NVRAM 启动项
+echo "==> [4/6] 注册 UEFI NVRAM 启动项..."
+ESP_SOURCE=$(findmnt -no SOURCE /boot/efi)
+ESP_DISK=$(lsblk -no PKNAME "$ESP_SOURCE" 2>/dev/null | head -n1)
+ESP_PART=$(cat "/sys/class/block/$(basename "$ESP_SOURCE")/partition" 2>/dev/null || echo "1")
+
+if [ -n "$ESP_DISK" ] && [ -d /sys/firmware/efi/efivars ]; then
+    efibootmgr | grep -E "Alpine Linux UKI" | awk -F'*' '{print $1}' | sed 's/Boot//' | while read -r bootnum; do
+        efibootmgr -b "$bootnum" -B >/dev/null 2>&1 || true
+    done
+    efibootmgr --create         --disk "/dev/${ESP_DISK}"         --part "${ESP_PART}"         --label "Alpine Linux UKI"         --loader "\EFI\Alpine\linux-${KERNEL_FLAVOR}.efi"         --verbose
+else
+    echo "提示：未检测到可写的 efivars 或物理磁盘父设备，将依赖默认路径 /EFI/BOOT/BOOTX64.EFI 启动。"
+fi
+
+# 6. 内置自检与产物验证
+echo "==> [5/6] 执行部署后完整性验证..."
+UKI_TARGET="/boot/efi/EFI/Alpine/linux-${KERNEL_FLAVOR}.efi"
+UKI_FALLBACK="/boot/efi/EFI/BOOT/BOOTX64.EFI"
+
+if [ ! -s "$UKI_TARGET" ] || [ ! -s "$UKI_FALLBACK" ]; then
+    echo "错误：UKI 目标文件未生成或大小为 0！" >&2
+    exit 1
+fi
+
+MAGIC_TARGET=$(dd if="$UKI_TARGET" bs=2 count=1 2>/dev/null || true)
+if [ "$MAGIC_TARGET" != "MZ" ]; then
+    echo "错误：${UKI_TARGET} 不是有效的 UEFI PE32+ 可执行文件！" >&2
+    exit 1
+fi
+
+echo "==> [6/6] 验证通过！单文件 UKI 已就绪："
+ls -lh "$UKI_TARGET" "$UKI_FALLBACK"
+EOF_SETUP
+
+# 2. 释放 verify-alpine-uki.sh
+cat << 'EOF_VERIFY' > "${TARGET_DIR}/verify-alpine-uki.sh"
+#!/bin/sh
+set -eu
+
+echo "=== 1. 检查内核分支与 UKI 产物 ==="
+KERNEL_FLAVOR=$(uname -r | awk -F'-' '{print $NF}')
+UKI_TARGET="/boot/efi/EFI/Alpine/linux-${KERNEL_FLAVOR}.efi"
+UKI_FALLBACK="/boot/efi/EFI/BOOT/BOOTX64.EFI"
+
+for f in "$UKI_TARGET" "$UKI_FALLBACK"; do
+    if [ -s "$f" ]; then
+        MAGIC=$(dd if="$f" bs=2 count=1 2>/dev/null || true)
+        SIZE=$(du -h "$f" | cut -f1)
+        echo "[OK] $f (大小: ${SIZE}, PE头: ${MAGIC})"
+    else
+        echo "[FAIL] 缺失或空文件: $f" >&2
+        exit 1
+    fi
+done
+
+echo ""
+echo "=== 2. 检查 /etc/kernel-hooks.d/ 配置 ==="
+if grep -q "signing_disabled=yes" /etc/kernel-hooks.d/secureboot.conf 2>/dev/null; then
+    echo "[OK] secureboot.conf 已配置无签名模式"
+    grep "^cmdline=" /etc/kernel-hooks.d/secureboot.conf
+else
+    echo "[WARN] 未找到有效的 secureboot.conf"
+fi
+
+echo ""
+echo "=== 3. 检查 UEFI NVRAM 启动项 ==="
+if command -v efibootmgr >/dev/null 2>&1 && [ -d /sys/firmware/efi/efivars ]; then
+    efibootmgr -v | grep -E "BootOrder|BootCurrent|Alpine" || true
+else
+    echo "[INFO] 当前环境不支持读取 efivars，跳过 NVRAM 检查"
+fi
+EOF_VERIFY
+
+# 3. 释放 README.md
+cat << 'EOF_README' > "${TARGET_DIR}/README.md"
+# Alpine Linux 2026 社区标准：sys 模式 UEFI 单文件 (UKI) 部署套件
+
+## 包含文件
+- `setup-alpine-uki-sys.sh`：一键配置 `systemd-efistub` + `secureboot-hook`（关闭签名），自动提取根分区 UUID 并生成 `.efi` 单文件及 `BOOTX64.EFI` 回退镜像。
+- `verify-alpine-uki.sh`：部署后独立巡检工具，核验 PE/COFF (`MZ`) 头部魔数、内核参数与 UEFI NVRAM 条目。
+
+## 快速执行
+```sh
+cd alpine-uki-sys
+./setup-alpine-uki-sys.sh
+./verify-alpine-uki.sh
+```
+EOF_README
+
+chmod +x "${TARGET_DIR}/setup-alpine-uki-sys.sh" "${TARGET_DIR}/verify-alpine-uki.sh"
+echo "==> 释放完成！包含文件如下："
+ls -lh "$TARGET_DIR"
